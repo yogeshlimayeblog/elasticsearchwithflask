@@ -4,12 +4,12 @@ import os
 from flask import Flask, current_app
 from cmreslogging.handlers import CMRESHandler
 
-is_remove = True
+is_remote = True
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 print (APP_ROOT)
 LOG_FILENAME = f"{APP_ROOT}/logs/api.log"
 app = Flask(__name__)
-if (is_remove):
+if (is_remote):
     handler = CMRESHandler(hosts=[{'host': 'localhost', 'port': 9200}],
                            auth_type=CMRESHandler.AuthType.NO_AUTH,
                            es_index_name="flask",
