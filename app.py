@@ -1,65 +1,59 @@
 import logging
-from logging.handlers import RotatingFileHandler
 import os
-from flask import Flask, current_app
+from datetime import datetime
+from flask import Flask, current_app, jsonify
 from elasticsearch import Elasticsearch
+from elasticsearch.exceptions import NotFoundError
 
-# Flag for whether to log remotely to Elasticsearch or locally to a file
-is_remote = True
+# Bonsai credentials and URL
+BONSAI_HOST = os.getenv('BONSAI_HOST')
+ACCESS_KEY = os.getenv('ACCESS_KEY')
+ACCESS_SECRET = os.getenv('ACCESS_SECRET')
 
-# Define the app root and log file path
-APP_ROOT = os.path.dirname(os.path.abspath(__file__))
-LOG_FILENAME = f"{APP_ROOT}/logs/api.log"
+# Set up Elasticsearch client
+es = Elasticsearch(
+    [{'host': BONSAI_HOST, 'port': 443, 'use_ssl': True}],
+    http_auth=(ACCESS_KEY, ACCESS_SECRET)
+)
 
-# Flask app instance
+# Create Flask application
 app = Flask(__name__)
 
-# Elasticsearch configuration for logging setup
-if is_remote:
-    # Set up the Elasticsearch client (assuming Elasticsearch runs in Docker with the name `elasticsearch`)
-    es = Elasticsearch(
-        ["https://172.19.0.2:9200"],  # Use HTTPS and the container name for Docker
-        verify_certs=False,              # Disable SSL verification for testing (not recommended for production)
-        basic_auth=("elastic", "5VhupIKx54o6t+SSQJuF")  # Replace with your actual elastic user password
-    )
+# Create index for logs if it doesn't exist
+index_name = 'logs'
+try:
+    es.indices.create(index=index_name)
+except NotFoundError:
+    pass  # Index already exists
+except Exception as e:
+    print("Error creating index:", e)
 
-    class ElasticsearchHandler(logging.Handler):
-        def emit(self, record):
-            log_entry = self.format(record)
-            # Send the log entry to Elasticsearch as a document
-            es.index(index="flask", document={"message": log_entry, "App": "elasticsearchwithflask", "Environment": "Dev"})
+# Custom logging handler for Elasticsearch
+class ElasticSearchHandler(logging.Handler):
+    def emit(self, record):
+        log_entry = self.format(record)
+        # Prepare the log entry for Elasticsearch
+        doc = {
+            'timestamp': datetime.now(),
+            'level': record.levelname,
+            'message': log_entry,
+            'service': 'my_flask_app'
+        }
+        # Index the log entry in Elasticsearch
+        es.index(index=index_name, body=doc)
 
-    # Use custom handler for Elasticsearch logging
-    handler = ElasticsearchHandler()
-else:
-    # Local file logging setup if `is_remote` is False
-    if not os.path.exists(os.path.dirname(LOG_FILENAME)):
-        os.makedirs(os.path.dirname(LOG_FILENAME))
-    handler = RotatingFileHandler(LOG_FILENAME, maxBytes=10000000, backupCount=10)
-
-# Set up logging handler and format
+# Set up the Elasticsearch logging handler
+handler = ElasticSearchHandler()
 handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter("%(name)s :: %(levelname)-8s :: %(message)s")
+formatter = logging.Formatter('%(name)s :: %(levelname)-8s :: %(message)s')
 handler.setFormatter(formatter)
-
-# Add handler to Flask app logger
 app.logger.addHandler(handler)
 app.logger.setLevel(logging.DEBUG)
 
-# Set up a separate logger for testing
-log = logging.getLogger("PythonTest")
-log.setLevel(logging.INFO)
-log.addHandler(handler)
-
-# Test log
-log.info("Test logs initialized")
-
-# Flask route
 @app.route('/')
 def hello_world():
-    current_app.logger.info("Hello World logger")
+    current_app.logger.info("hello world logger")
     return 'Hello World!'
 
-# Run the Flask app
 if __name__ == '__main__':
     app.run(host="0.0.0.0")
