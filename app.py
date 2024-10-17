@@ -1,11 +1,13 @@
 import logging
 import os
-from datetime import datetime
-from flask import Flask, current_app, jsonify
+from flask import Flask, request, jsonify
 from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import NotFoundError
+from sklearn.linear_model import LogisticRegression
+import numpy as np
+from datetime import datetime
 
-# Bonsai credentials and URL
+# Bonsai credentials and URL from environment variables
 BONSAI_HOST = os.getenv('BONSAI_HOST')
 ACCESS_KEY = os.getenv('ACCESS_KEY')
 ACCESS_SECRET = os.getenv('ACCESS_SECRET')
@@ -50,10 +52,43 @@ handler.setFormatter(formatter)
 app.logger.addHandler(handler)
 app.logger.setLevel(logging.DEBUG)
 
+# Sample Logistic Regression model
+model = LogisticRegression()
+
+# Train the model on dummy data
+X_train = np.array([[0, 0], [1, 1]])
+y_train = np.array([0, 1])
+model.fit(X_train, y_train)
+
 @app.route('/')
 def hello_world():
-    current_app.logger.info("hello world logger")
+    app.logger.info("hello world logger")
     return 'Hello World!'
+
+# Scikit-learn model prediction endpoint
+@app.route('/predict', methods=['GET'])
+def predict():
+    # Get query parameters
+    feature_1 = float(request.args.get('feature_1', 0))  # Default value is 0 if not provided
+    feature_2 = float(request.args.get('feature_2', 0))  # Default value is 0 if not provided
+
+    # Prepare input for the model
+    input_features = np.array([[feature_1, feature_2]])
+
+    # Make prediction
+    prediction = model.predict(input_features)
+
+    # Log the prediction
+    app.logger.info(f"Prediction made: {prediction[0]} for features {input_features}")
+
+    # Return prediction result as JSON
+    return jsonify({
+        'input': {
+            'feature_1': feature_1,
+            'feature_2': feature_2
+        },
+        'prediction': int(prediction[0])
+    })
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0")
